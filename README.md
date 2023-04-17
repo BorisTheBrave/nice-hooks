@@ -27,4 +27,5 @@ result, cache = nice_hooks.run(my_model, *args_to_model, return_activations=["mo
 
 ### Activation patching
 
-TODO
+TODO: The current behaviour only patches entire layers, which is hardly helpful.
+Maybe we should support some sort of slicing? "my_module[:, 0]"

@@ -2,7 +2,7 @@ import torch as t
 from torch import nn
 import functools
 import re
-from typing import Union
+from typing import Union, Callable
 from activationcache import ActivationCache, ActivationCacheLike
 
 def _match_path_to_re(match_path: str) -> re.Pattern:
@@ -26,13 +26,29 @@ class ModuleNameMatcher:
 
 def run(module: nn.Module, *args, 
         return_activations: Union[list[str], bool] = None, 
-        with_activations: ActivationCacheLike = None, 
+        with_activations: ActivationCacheLike = None,
+        with_forward_hooks: dict[str, Callable[..., None]] = None,
+        with_forward_pre_hooks: dict[str, Callable[..., None]] = None,
+        with_backward_hooks: dict[str, Callable[..., None]] = None,
         **kwargs):
-    """Runs the model, accepting some extra keyword parameters
+    """Runs the model, accepting some extra keyword parameters for various behaviours
     
     return_activations - if true, records activations as the module is run an activations cache. Returns a tuple of model output, and the activations cache.
-    with_activations - if set, replaces the given activations when running the module forward. """
+    with_activations - if set, replaces the given activations when running the module forward.
+    with_forwared_hooks - if sets, temporarily registers the forward hooks for just this run """
     cleanup: list[t.utils.hooks.RemovableHandle] = []
+    if with_forward_hooks:
+        for name, submodule in module.named_modules():
+            if name in with_forward_hooks:
+                cleanup.append(submodule.register_forward_hook(with_forward_hooks[name]))
+    if with_forward_pre_hooks:
+        for name, submodule in module.named_modules():
+            if name in with_forward_pre_hooks:
+                cleanup.append(submodule.register_backward_hook(with_forward_pre_hooks[name]))
+    if with_backward_hooks:
+        for name, submodule in module.named_modules():
+            if name in with_backward_hooks:
+                cleanup.append(submodule.register_forward_pre_hook(with_backward_hooks[name]))
     if with_activations:
         # Add hook to every module
         def hook(new_value, m, i, o):
