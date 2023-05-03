@@ -172,7 +172,10 @@ def _do_fwd_hook(expanded_paths: list[Tuple[ModulePath, nn.Module]], hook: Calla
                         if sl2 is None:
                             new_o = update
                         else:
-                            new_o = new_o.index_put(sl2, update)
+                            # TODO: There's probably a better way of doing this?
+                            new_o = new_o.clone()
+                            new_o[sl2] = update
+                            #new_o = new_o.index_put(sl2, update)
                 o = new_o
             return None if o is orig_o else o
 

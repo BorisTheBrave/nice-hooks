@@ -68,5 +68,9 @@ class TestNiceHooks(unittest.TestCase):
         r = nice_hooks.run(model1, t.zeros(1), with_activations={"0": t.ones(10)})
         self.assertEqual(t.ones(1) * 10, r)
 
+    def tests_with_activation3(self):
+        r = nice_hooks.run(model1, t.zeros(1), with_activations={"0[:2]": t.ones(2)})
+        self.assertEqual(t.ones(1) * 2, r)
+
 if __name__ == '__main__':
     unittest.main()
