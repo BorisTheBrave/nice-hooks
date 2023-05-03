@@ -138,9 +138,18 @@ def _do_fwd_hook(expanded_paths: list[Tuple[ModulePath, nn.Module]], hook: Calla
     paths_by: dict[nn.Module, list[ModulePath]] = _regroup(expanded_paths, lambda p: p[1], lambda p: p[0])
     for module, path_tuples in paths_by.items():
         def inner_hook(pt, mod, i, o):
+            orig_o = o
             for name, sl in pt:
+                new_o = o
                 for tt, sl2 in _expand_slice(o, sl):
-                    hook(mod, ModulePath(name, sl2) , i, tt)
+                    update = hook(mod, ModulePath(name, sl2) , i, tt)
+                    if update is not None:
+                        if sl2 is None:
+                            new_o = update
+                        else:
+                            new_o = new_o.index_put(sl2, update)
+                o = new_o
+            return None if o is orig_o else o
 
         yield module.register_forward_hook(functools.partial(inner_hook, path_tuples))
 
