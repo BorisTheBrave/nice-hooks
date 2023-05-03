@@ -8,6 +8,27 @@ from activationcache import ActivationCache, ActivationCacheLike
 from dataclasses import dataclass
 
 AnySlice = Union[None, int, slice, list, tuple, t.Tensor]
+PathsLike = Union[str, list[str], bool]
+
+def to_paths(paths: PathsLike)->list[str]:
+    if paths is True:
+        return ["**"]
+    if paths is False:
+        return []
+    if isinstance(paths, str):
+        return [paths]
+    return paths
+class RemovableHandleCollection:
+    def __init__(self, handles: list[RemovableHandle]) -> None:
+        self.handles = handles
+
+    def __enter__(self):
+        return self
+    
+    def __exit__(self):
+        for h in self.handles:
+            h.remove()
+
 
 def _format_slice(sl):
     if isinstance(sl, slice):
@@ -41,7 +62,7 @@ class ModulePath:
 
 _PATH_REGEX_BITS = {
     ".": r"\.",
-    "*": r"[^\*]*",
+    "*": r"[^\.]*",
     "**": r".*"
 }
 
@@ -50,21 +71,21 @@ _WILDCARD = "*"
 def _split_module_path(path: str) -> ModulePath:
     """Parse a string into a ModulePath. Wildcards are passed through unhanged"""
     # Parse out the slice
-    m = re.search(r"\[([0-9:\*,]+)\]$", path)
+    m = re.search(r"\[([0-9-:\*,]+)\]$", path)
     slice_parts = None
     if m is not None:
         ii = m.group(1).split(",")
         path = path[:len(path) - len(m.group(0))]
         slice_parts = []
         for i in ii:
-            m2 = re.match(r"(\d*):(\d*)", i)
+            m2 = re.match(r"([0-9-]*):([0-9-]*)", i)
             if m2:
                 slice_parts.append(slice(
                     None if m2.group(1) == "" else int(m2.group(1)),
                     None if m2.group(2) == "" else int(m2.group(2)),
                 ))
                 continue
-            m2 = re.match(r"\d+", i)
+            m2 = re.match(r"[0-9-]+", i)
             if m2:
                 slice_parts.append(int(i))
                 continue
@@ -75,28 +96,31 @@ def _split_module_path(path: str) -> ModulePath:
         slice_parts = tuple(slice_parts)
     return ModulePath(path, slice_parts)
 
-def expand_module_path(model: nn.Module, path: str) -> list[(ModulePath, nn.Module)]:
-    """Parses a path string to a ModulePath, then expands any wildcards in the path.
+def expand_module_path(model: nn.Module, path: PathsLike) -> list[(ModulePath, nn.Module)]:
+    """Parses a path string to a ModulePath, then expands any wildcards in the name.
     Slice wildcards are left unchanged"""
-    unexpanded = _split_module_path(path)
+    paths = to_paths(path)
 
-    # Turn path into a regex:
-    # .  -> \.
-    # *  -> [^\*]*
-    # ** -> .*
-    # everything else to literals
-    repath = ""
-    for item in re.split("(\.|\*\*|\*)", unexpanded.name):
-        repath += _PATH_REGEX_BITS.get(item, re.escape(item))
-    repath = re.compile(repath)
-
-
-    # Find modules that match path
     r = []
-    for name, mod in model.named_modules():
-        if not repath.fullmatch(name):
-            continue
-        r.append((ModulePath(name, unexpanded.slice), mod))
+    for path in paths:
+        unexpanded = _split_module_path(path)
+
+        # Turn path into a regex:
+        # .  -> \.
+        # *  -> [^\*]*
+        # ** -> .*
+        # everything else to literals
+        repath = ""
+        for item in re.split("(\.|\*\*|\*)", unexpanded.name):
+            repath += _PATH_REGEX_BITS.get(item, re.escape(item))
+        repath = re.compile(repath)
+
+
+        # Find modules that match path
+        for name, mod in model.named_modules():
+            if not repath.fullmatch(name):
+                continue
+            r.append((ModulePath(name, unexpanded.slice), mod))
     return r
 
 def _is_wild_slice(sl: AnySlice) -> bool:
@@ -132,10 +156,11 @@ def _regroup(iter, key_fn, value_fn=None):
         d[k].append(v)
     return d
 
-def _do_fwd_hook(expanded_paths: list[Tuple[ModulePath, nn.Module]], hook: Callable) -> list[RemovableHandle]:
+def _do_fwd_hook(expanded_paths: list[Tuple[ModulePath, nn.Module]], hook: Callable) -> RemovableHandleCollection:
     """Like register_forward_hook, but for the results of expand_module_path
     Handles wildcard slices."""
     paths_by: dict[nn.Module, list[ModulePath]] = _regroup(expanded_paths, lambda p: p[1], lambda p: p[0])
+    handles = []
     for module, path_tuples in paths_by.items():
         def inner_hook(pt, mod, i, o):
             orig_o = o
@@ -151,14 +176,16 @@ def _do_fwd_hook(expanded_paths: list[Tuple[ModulePath, nn.Module]], hook: Calla
                 o = new_o
             return None if o is orig_o else o
 
-        yield module.register_forward_hook(functools.partial(inner_hook, path_tuples))
+        handle = module.register_forward_hook(functools.partial(inner_hook, path_tuples))
+        handles.append(handle)
+    return RemovableHandleCollection(handles)
 
-def register_forward_hook(module: nn.Module, path: str, hook: Callable) -> list[RemovableHandle]:
+def register_forward_hook(module: nn.Module, path: PathsLike, hook: Callable) -> RemovableHandleCollection:
     expanded = expand_module_path(module, path)
-    return list(_do_fwd_hook(expanded, hook))
+    return _do_fwd_hook(expanded, hook)
 
 def run(module: nn.Module, *args, 
-        return_activations: Union[list[str], bool] = None, 
+        return_activations: PathsLike = None, 
         with_activations: ActivationCacheLike = None,
         **kwargs):
     """Runs the model, accepting some extra keyword parameters for various behaviours
@@ -173,16 +200,15 @@ def run(module: nn.Module, *args,
             return new_value
         for k, v in with_activations.items():
             # TODO: pre-hook?
-            cleanup.extend(register_forward_hook(module, k, functools.partial(with_activation_hook, v)))
+            cleanup.extend(register_forward_hook(module, k, functools.partial(with_activation_hook, v)).handles)
 
     if return_activations:
-        if return_activations is True:
-            return_activations = ["*"]
+        return_activations = to_paths(return_activations)
         activation_cache = ActivationCache()
         def with_return_hook(m, p, i, o):
             activation_cache[str(p)] = o
         for k in return_activations:
-            cleanup.extend(register_forward_hook(module, k, with_return_hook))
+            cleanup.extend(register_forward_hook(module, k, with_return_hook).handles)
     # Actually run module
     try:
         result = module(*args, **kwargs)

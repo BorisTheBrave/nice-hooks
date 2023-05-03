@@ -25,6 +25,9 @@ model2 = nn.Sequential(
     nn.Sequential(
         nn.Linear(10, 1),
         nn.Linear(1, 1),
+        nn.Sequential(
+            nn.Linear(1, 1),
+        )
     )
 )
 init(model2)
@@ -41,12 +44,21 @@ class TestNiceHooks(unittest.TestCase):
 
     def test_return_wildcard_activation(self):
         r, a = nice_hooks.run(model2, t.zeros(1), return_activations=["1.*"])
-        self.assertEqual(["1.0", "1.1"], list(a))
+        self.assertEqual(["1.0", "1.1", "1.2"], list(a))
+
+    def test_return_deep_wildcard_activation(self):
+        r, a = nice_hooks.run(model2, t.zeros(1), return_activations=["1.**"])
+        self.assertEqual(["1.0", "1.1", "1.2.0", "1.2"], list(a))
 
     def test_return_slice_activation(self):
         r, a = nice_hooks.run(model2, t.zeros(1), return_activations=["0[0:5]"])
         self.assertEqual(["0[0:5]"], list(a))
         self.assertEqual((5,), a["0[0:5]"].shape)
+
+    def test_return_slice_activation2(self):
+        r, a = nice_hooks.run(model2, t.zeros(1), return_activations=["0[-5:]"])
+        self.assertEqual(["0[-5:]"], list(a))
+        self.assertEqual((5,), a["0[-5:]"].shape)
 
     def tests_with_activation1(self):
         r = nice_hooks.run(model1, t.zeros(1), with_activations={"1": t.ones(1)})
