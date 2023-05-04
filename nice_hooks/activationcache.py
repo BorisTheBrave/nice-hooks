@@ -7,6 +7,7 @@ class ActivationCache(dict[str, t.Tensor]):
     """
     A wrapper around a dictionary of cached activations from a model run.
     Supports similar operations to t.Tensor, which are usually applied elementwise.
+    See :ref:`Activation Caches`
 
     """
 

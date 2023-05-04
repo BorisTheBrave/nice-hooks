@@ -10,6 +10,10 @@ Welcome to nice_hooks's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   usage.rst
+   modulepaths.rst
+   activationcache.rst
+
 
 
 Indices and tables

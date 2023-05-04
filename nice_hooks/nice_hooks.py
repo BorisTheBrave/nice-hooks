@@ -50,7 +50,7 @@ def _format_slice(sl):
 
 @dataclass
 class ModulePath:
-    """Represents a parsed module path."""
+    """Represents a parsed module path. See :ref:`module paths`"""
 
     name: str
     """The name of the module"""

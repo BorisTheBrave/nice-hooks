@@ -15,6 +15,7 @@ pytest = "^7.3.1"
 sphinx = "6.2"
 sphinx-rtd-theme = "^1.2.0"
 sphinx-autoapi = "^2.1.0"
+myst-parser = "^1.0.0"
 
 [build-system]
 requires = ["poetry-core"]
