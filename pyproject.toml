@@ -1,21 +1,18 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-[project]
-name = "nice_hooks"
-version = "0.0.1"
-authors = [
-  { name="Adam Newgas", email="boris@boristhebrave.com" },
-]
+[tool.poetry]
+name = "nice-hooks"
+version = "0.1.0"
 description = "Convenience functions for working with pytorch hooks."
+authors = ["Adam newgas <boris@boristhebrave.com>"]
 readme = "README.md"
-requires-python = ">=3.7"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
+packages = [{include = "nice_hooks"}]
 
-[project.urls]
-"Homepage" = "https://github.com/BorisTheBrave/nice_hooks"
-"Bug Tracker" = "https://github.com/BorisTheBrave/nice_hooks/issues"
+[tool.poetry.dependencies]
+python = "^3.7"
+torch = ">=1.10"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.3.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

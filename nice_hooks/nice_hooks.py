@@ -4,7 +4,7 @@ from torch import nn
 import functools
 import re
 from typing import Union, Callable, Tuple
-from activationcache import ActivationCache, ActivationCacheLike
+from .activationcache import ActivationCache, ActivationCacheLike
 from dataclasses import dataclass
 
 AnySlice = Union[None, int, slice, list, tuple, t.Tensor]
@@ -111,7 +111,7 @@ def expand_module_path(model: nn.Module, path: PathsLike) -> list[(ModulePath, n
         # ** -> .*
         # everything else to literals
         repath = ""
-        for item in re.split("(\.|\*\*|\*)", unexpanded.name):
+        for item in re.split(r"(\.|\*\*|\*)", unexpanded.name):
             repath += _PATH_REGEX_BITS.get(item, re.escape(item))
         repath = re.compile(repath)
 
