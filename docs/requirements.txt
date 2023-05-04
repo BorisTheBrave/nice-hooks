@@ -1,0 +1,3 @@
+# Requirements needed to make readthedocs happy
+sphinx-autoapi==2.1.0
+myst-parser==1.0.0
