@@ -156,18 +156,18 @@ def _regroup(iter, key_fn, value_fn=None):
         d[k].append(v)
     return d
 
-def _do_fwd_hook(expanded_paths: list[Tuple[ModulePath, nn.Module]], hook: Callable) -> RemovableHandleCollection:
+def _do_hook(expanded_paths: list[Tuple[ModulePath, nn.Module]], hook: Callable, reg) -> RemovableHandleCollection:
     """Like register_forward_hook, but for the results of expand_module_path
     Handles wildcard slices."""
     paths_by: dict[nn.Module, list[ModulePath]] = _regroup(expanded_paths, lambda p: p[1], lambda p: p[0])
     handles = []
     for module, path_tuples in paths_by.items():
-        def inner_hook(pt, mod, i, o):
-            orig_o = o
+        def inner_hook(pt, mod, *args):
+            orig_o = o = args[-1]
             for name, sl in pt:
                 new_o = o
                 for tt, sl2 in _expand_slice(o, sl):
-                    update = hook(mod, ModulePath(name, sl2) , i, tt)
+                    update = hook(mod, ModulePath(name, sl2), *args[:-1], tt)
                     if update is not None:
                         if sl2 is None:
                             new_o = update
@@ -179,13 +179,28 @@ def _do_fwd_hook(expanded_paths: list[Tuple[ModulePath, nn.Module]], hook: Calla
                 o = new_o
             return None if o is orig_o else o
 
-        handle = module.register_forward_hook(functools.partial(inner_hook, path_tuples))
+        reg_fun = getattr(module, reg)
+        handle = reg_fun(functools.partial(inner_hook, path_tuples))
         handles.append(handle)
     return RemovableHandleCollection(handles)
 
 def register_forward_hook(module: nn.Module, path: PathsLike, hook: Callable) -> RemovableHandleCollection:
     expanded = expand_module_path(module, path)
-    return _do_fwd_hook(expanded, hook)
+    return _do_hook(expanded, hook, 'register_forward_hook')
+
+def register_forward_pre_hook(module: nn.Module, path: PathsLike, hook: Callable) -> RemovableHandleCollection:
+    expanded = expand_module_path(module, path)
+    assert all(p.slice is None for p in expanded), "Indices are not supported for pre hooksregister_full_backward_pre_hook"
+    return _do_hook(expanded, hook, 'register_forward_pre_hook')
+
+def register_full_backward_hook(module: nn.Module, path: PathsLike, hook: Callable) -> RemovableHandleCollection:
+    expanded = expand_module_path(module, path)
+    return _do_hook(expanded, hook, 'register_full_backward_hook')
+
+def register_full_backward_pre_hook(module: nn.Module, path: PathsLike, hook: Callable) -> RemovableHandleCollection:
+    expanded = expand_module_path(module, path)
+    assert all(p.slice is None for p in expanded), "Indices are not supported for pre hooksregister_full_backward_pre_hook"
+    return _do_hook(expanded, hook, 'register_full_backward_pre_hook')
 
 def run(module: nn.Module, *args, 
         return_activations: PathsLike = None, 
@@ -202,7 +217,7 @@ def run(module: nn.Module, *args,
         def with_activation_hook(new_value, m, p, i, o):
             return new_value
         for k, v in with_activations.items():
-            # TODO: pre-hook?
+            # TODO: pre-hook if no indices?
             cleanup.extend(register_forward_hook(module, k, functools.partial(with_activation_hook, v)).handles)
 
     if return_activations:

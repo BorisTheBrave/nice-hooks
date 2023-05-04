@@ -1,6 +1,6 @@
 # nice_hooks
 
-A python package for making working with torch hooks easier.
+A python package for making working with torch hooks easier. You can bind hooks to a modules using a [flexible pattern string](#module-paths) and it contains utilities for working with [activation caches](#activationcache).
 
 Many of the ideas are based on the `TransformerLens` library, but written so it can work with *any* pytorch model.
 
@@ -8,7 +8,46 @@ Many of the ideas are based on the `TransformerLens` library, but written so it 
 
 ### Registering hooks
 
+nice_hooks comes with functions `register_forward_hook`, `register_forward_pre_hook`, `register_full_backward_hook`, `register_full_backward_pre_hook` which correspond to their counterparts on `torch.nn.Module`.
+
+The main differences are:
+ * They are functions, not methods of Module
+ * The accept an additional argument `path`, which lets you select multiple modules of the model.
+ * The hook functions are called with an additional argument path which describes the module currently
+
+Because of the `path` argument, you can register hooks on your root model, and specify the particular module you are interested in as a string. The `path` argument is a [module path](#module-paths) so can specify multiple modules with wild cards, and [index specific values](#module-path-indices) in the activation.
+
+```python
+def my_hook(module: nn.Module, path: nice_hooks.ModulePath, args, output):
+    print(output)
+
+nice_hooks.register_forward_hook(my_model, "path.to.module", my_hook)
+```
+
 ### Running the model
+
+nice_hooks comes with a method `run` that runs the model.
+
+```python
+result = nice_hooks.run(model, *args, **kwargs)
+# equivalent to:
+# result = model(*args, **kwargs)
+```
+
+`run` comes with several keyword arguments for controlling running the model:
+
+### Running the model with hooks
+
+Hooks can be set on the model for the duration of a single run:
+
+```python
+result = nice_hooks.run(model, *args, forward_hooks={'mod1': hook1})
+# Equivalent to
+# with nice_hooks.register_forward_hook(model, 'mod1', hook1):
+#     result = model(*args)
+```
+
+See [Registering Hooks](#registering-hooks) for details.
 
 ### Recording activations
 
@@ -16,23 +55,35 @@ You can get the activations associated with an evaluation of the model with:
 
 ```python
 import nice_hooks
-result, cache = nice_hooks.run(my_model, *args_to_model, return_activations=True)
+result, cache = nice_hooks.run(my_model, *args, return_activations=True)
 ```
 
-As activations are large, you can also specify which submodules you are interested in.
+The returned [cache](#activationcache) is a dictionary with a keys for each module name, and tensor values for their output during the run.
+
+As storing all activations occupies memory, you can also specify which modules you are interested in, using the [module path syntax](#module-paths)
 
 ```python
 result, cache = nice_hooks.run(my_model, *args_to_model, return_activations=["mod1.*", "mod2"])
 ```
 
-### Working with activations
-
-`ActivationCache` is just a dictionary of strings to torch tensors, but it does come with a few extra utility methods such as adding/subtracting caches.
-
 ### Activation patching
 
-TODO: The current behaviour only patches entire layers, which is hardly helpful.
-Maybe we should support some sort of slicing? "my_module[:, 0]"
+You can replace specific activations with a known value:
+
+```python
+result = nice_hooks.run(my_model, *args, with_activations={'mod1': t.ones(5)})
+```
+
+This replaces the output of the module named mod1 with the given tensor. Replacing an entire layer is not often useful, so you will likely want to use a [path with an index](#module-path-indices)
+
+
+```python
+result = nice_hooks.run(my_model, *args, with_activations={'mod1[:,3:5]': t.ones(2)})
+```
+
+### `patch_method_to_module`
+
+TODO
 
 
 ## Concepts
