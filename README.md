@@ -100,11 +100,11 @@ nice_hooks often accepts a "module path", which is a string pattern that selects
 * `"my.module.name.*"` - matches any module that is a child of `my.module.name`
 * `"my.module.name.**`" - matches any module that is a descentdent of `my.module.name`
 
-#### Module path indices
+### Module path indices
 
 Module paths can also contain an index operation, e.g. `"my.module.path[0:5]"`. This instructs the hook to report the output of the module indexed to just the range specified. Similarly, any tensor returned from the hook affects just the indexed range.
 
-Being able to have hooks target specific subsets of a layer's output means you can
+Being able to have hooks target specific subsets of a layer's output means you can work with specific neurons.
 
 * `"my.module.path[:5]"` - indexes just the first 5 elements in dim 0.
 * `"my.module.path[:,-5:]"` - indexes just the last 5 elements in dim 1. This is often necessary as the first dimension is batched.

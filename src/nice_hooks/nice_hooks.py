@@ -285,6 +285,8 @@ def patch_method_to_module(cls: type, fname: str):
     setattr(cls, "__init__", repl__init__)
     pass
 
+
+
 if __name__ == "__main__":
     class CustomModule(nn.Module):
         def __init__(self) -> None:
