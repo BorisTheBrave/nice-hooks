@@ -8,9 +8,12 @@ from .activationcache import ActivationCache, ActivationCacheLike
 from dataclasses import dataclass
 
 AnySlice = Union[None, int, slice, list, tuple, t.Tensor]
-PathsLike = Union[str, list[str], bool]
+"""Anything that can be used as an index to a torch Tensor. Or `None`."""
+ModulePathsLike = Union[str, list[str], bool]
+"""Anything that can be parsed into a list of :class:`ModulePath` object."""
 
-def to_paths(paths: PathsLike)->list[str]:
+def _to_paths(paths: ModulePathsLike)->list[str]:
+    """Converts paths like things to list[str]"""
     if paths is True:
         return ["**"]
     if paths is False:
@@ -19,6 +22,10 @@ def to_paths(paths: PathsLike)->list[str]:
         return [paths]
     return paths
 class RemovableHandleCollection:
+    """Represents a collection of torch RemovableHandle objects.
+    
+    Like RemovableHandle itself, this class supports `with` statements.
+    """
     def __init__(self, handles: list[RemovableHandle]) -> None:
         self.handles = handles
 
@@ -43,8 +50,48 @@ def _format_slice(sl):
 
 @dataclass
 class ModulePath:
+    """Represents a parsed module path."""
+
     name: str
+    """The name of the module"""
     slice: AnySlice
+    """How the module's output should be indexed. `None` indicates the module output is not changed."""
+
+    @staticmethod
+    def parse(path: str) -> "ModulePath":
+        """Parse a string into a ModulePath. Wildcards are passed through unchanged.
+        
+        Args:
+            path: The path to parse
+
+        Returns:
+            The path, parsed into parts.
+        """
+        # Parse out the slice
+        m = re.search(r"\[([0-9-:\*,]+)\]$", path)
+        slice_parts = None
+        if m is not None:
+            ii = m.group(1).split(",")
+            path = path[:len(path) - len(m.group(0))]
+            slice_parts = []
+            for i in ii:
+                m2 = re.match(r"([0-9-]*):([0-9-]*)", i)
+                if m2:
+                    slice_parts.append(slice(
+                        None if m2.group(1) == "" else int(m2.group(1)),
+                        None if m2.group(2) == "" else int(m2.group(2)),
+                    ))
+                    continue
+                m2 = re.match(r"[0-9-]+", i)
+                if m2:
+                    slice_parts.append(int(i))
+                    continue
+                if i == "*":
+                    slice_parts.append(_WILDCARD)
+                    continue
+                raise Exception("Unrecognized slice part", i)
+            slice_parts = tuple(slice_parts)
+        return ModulePath(path, slice_parts)
 
     def __iter__(self):
         return iter((self.name, self.slice))
@@ -68,42 +115,15 @@ _PATH_REGEX_BITS = {
 
 _WILDCARD = "*"
 
-def _split_module_path(path: str) -> ModulePath:
-    """Parse a string into a ModulePath. Wildcards are passed through unhanged"""
-    # Parse out the slice
-    m = re.search(r"\[([0-9-:\*,]+)\]$", path)
-    slice_parts = None
-    if m is not None:
-        ii = m.group(1).split(",")
-        path = path[:len(path) - len(m.group(0))]
-        slice_parts = []
-        for i in ii:
-            m2 = re.match(r"([0-9-]*):([0-9-]*)", i)
-            if m2:
-                slice_parts.append(slice(
-                    None if m2.group(1) == "" else int(m2.group(1)),
-                    None if m2.group(2) == "" else int(m2.group(2)),
-                ))
-                continue
-            m2 = re.match(r"[0-9-]+", i)
-            if m2:
-                slice_parts.append(int(i))
-                continue
-            if i == "*":
-                slice_parts.append(_WILDCARD)
-                continue
-            raise Exception("Unrecognized slice part", i)
-        slice_parts = tuple(slice_parts)
-    return ModulePath(path, slice_parts)
-
-def expand_module_path(model: nn.Module, path: PathsLike) -> list[(ModulePath, nn.Module)]:
+def expand_module_path(model: nn.Module, path: ModulePathsLike) -> list[(ModulePath, nn.Module)]:
     """Parses a path string to a ModulePath, then expands any wildcards in the name.
+
     Slice wildcards are left unchanged"""
-    paths = to_paths(path)
+    paths = _to_paths(path)
 
     r = []
     for path in paths:
-        unexpanded = _split_module_path(path)
+        unexpanded = ModulePath.parse(path)
 
         # Turn path into a regex:
         # .  -> \.
@@ -184,37 +204,74 @@ def _do_hook(expanded_paths: list[Tuple[ModulePath, nn.Module]], hook: Callable,
         handles.append(handle)
     return RemovableHandleCollection(handles)
 
-def register_forward_hook(module: nn.Module, path: PathsLike, hook: Callable) -> RemovableHandleCollection:
+def register_forward_hook(module: nn.Module, path: ModulePathsLike, hook: Callable) -> RemovableHandleCollection:
+    """Registers forward hooks on submodules of a module.
+    
+    Args:
+        module: The root module to read `named_modules()` from.
+        path: A string or strings indicating which modules to attach the hook to.
+        hook: A function accepting `(module, path, args, output)` arguments.
+    """
     expanded = expand_module_path(module, path)
     return _do_hook(expanded, hook, 'register_forward_hook')
 
-def register_forward_pre_hook(module: nn.Module, path: PathsLike, hook: Callable) -> RemovableHandleCollection:
+def register_forward_pre_hook(module: nn.Module, path: ModulePathsLike, hook: Callable) -> RemovableHandleCollection:
+    """Registers forward pre hooks on submodules of a module.
+    
+    Args:
+        module: The root module to read `named_modules()` from.
+        path: A string or strings indicating which modules to attach the hook to.
+        hook: A function accepting `(module, path, args)` arguments.
+    """
     expanded = expand_module_path(module, path)
     assert all(p.slice is None for p in expanded), "Indices are not supported for pre hooksregister_full_backward_pre_hook"
     return _do_hook(expanded, hook, 'register_forward_pre_hook')
 
-def register_full_backward_hook(module: nn.Module, path: PathsLike, hook: Callable) -> RemovableHandleCollection:
+def register_full_backward_hook(module: nn.Module, path: ModulePathsLike, hook: Callable) -> RemovableHandleCollection:
+    """Registers backward hooks on submodules of a module.
+    
+    Args:
+        module: The root module to read `named_modules()` from.
+        path: A string or strings indicating which modules to attach the hook to.
+        hook: A function accepting `(module, path, grad_args, grad_output)` arguments.
+    """
     expanded = expand_module_path(module, path)
     return _do_hook(expanded, hook, 'register_full_backward_hook')
 
-def register_full_backward_pre_hook(module: nn.Module, path: PathsLike, hook: Callable) -> RemovableHandleCollection:
+def register_full_backward_pre_hook(module: nn.Module, path: ModulePathsLike, hook: Callable) -> RemovableHandleCollection:
+    """Registers backward pre hooks on submodules of a module.
+    
+    Args:
+        module: The root module to read `named_modules()` from.
+        path: A string or strings indicating which modules to attach the hook to.
+        hook: A function accepting `(module, path, grad_args)` arguments.
+    """
     expanded = expand_module_path(module, path)
     assert all(p.slice is None for p in expanded), "Indices are not supported for pre hooksregister_full_backward_pre_hook"
     return _do_hook(expanded, hook, 'register_full_backward_pre_hook')
 
-def run(module: nn.Module, *args, 
-        return_activations: PathsLike = None, 
+def run(module: nn.Module,
+        *args,
+        return_activations: ModulePathsLike = None, 
         with_activations: ActivationCacheLike = None,
-        forward_hooks: dict[PathsLike, Callable] = None,
-        forward_pre_hooks: dict[PathsLike, Callable] = None,
-        full_backward_hooks: dict[PathsLike, Callable] = None,
-        full_backward_pre_hooks: dict[PathsLike, Callable] = None,
+        forward_hooks: dict[ModulePathsLike, Callable] = None,
+        forward_pre_hooks: dict[ModulePathsLike, Callable] = None,
+        full_backward_hooks: dict[ModulePathsLike, Callable] = None,
+        full_backward_pre_hooks: dict[ModulePathsLike, Callable] = None,
         **kwargs):
-    """Runs the model, accepting some extra keyword parameters for various behaviours
-    
-    return_activations - if true, records activations as the module is run an activations cache. Returns a tuple of model output, and the activations cache.
-    with_activations - if set, replaces the given activations when running the module forward.
-    with_forwared_hooks - if sets, temporarily registers the forward hooks for just this run """
+    """Runs the model, accepting some extra keyword parameters for various behaviours.
+
+    Args:
+        module: The module to run
+        *args: Args to pass to the model
+        **kwargs: Args to pass to the model
+        return_activations: If true, records activations as the module is run an activations cache. Returns a tuple of model output, and the activations cache.
+        with_activations: If set, replaces the given activations when running the module forward.
+        forward_hooks: If set, temporarily registers forward hooks for just this run
+        forward_pre_hooks: If set, temporarily registers forward pre hooks for just this run
+        full_backward_hooks: If set, temporarily registers backward hooks for just this run
+        full_backward_pre_hooks: If set, temporarily registers backward pre hooks for just this run
+    """
     cleanup: list[RemovableHandle] = []
 
     if forward_hooks:
@@ -238,7 +295,7 @@ def run(module: nn.Module, *args,
             cleanup.extend(register_forward_hook(module, k, functools.partial(with_activation_hook, v)).handles)
 
     if return_activations:
-        return_activations = to_paths(return_activations)
+        return_activations = _to_paths(return_activations)
         activation_cache = ActivationCache()
         def with_return_hook(m, p, i, o):
             activation_cache[str(p)] = o
@@ -263,6 +320,10 @@ def patch_method_to_module(cls: type, fname: str):
 
     This uses monkey patching, you only need call it once on a class to affect all instances.
     It must be called before creating instances of cls.
+
+    Args:
+        cls: The class to patch
+        fname: The name of the method on the class.
     """
     # Record the old methods we're about to patch
     old_fn = getattr(cls, fname)

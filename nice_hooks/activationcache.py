@@ -32,3 +32,4 @@ class ActivationCache(dict[str, t.Tensor]):
 
 # An object castable to activation cache
 ActivationCacheLike = dict[str, t.Tensor]
+"""Any object that a :class:`ActivationCache` can be constructed from."""

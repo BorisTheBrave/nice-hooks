@@ -12,7 +12,9 @@ torch = ">=1.10"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
-sphinx = "^7.0.0"
+sphinx = "6.2"
+sphinx-rtd-theme = "^1.2.0"
+sphinx-autoapi = "^2.1.0"
 
 [build-system]
 requires = ["poetry-core"]
