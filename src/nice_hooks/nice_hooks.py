@@ -205,6 +205,10 @@ def register_full_backward_pre_hook(module: nn.Module, path: PathsLike, hook: Ca
 def run(module: nn.Module, *args, 
         return_activations: PathsLike = None, 
         with_activations: ActivationCacheLike = None,
+        forward_hooks: dict[PathsLike, Callable] = None,
+        forward_pre_hooks: dict[PathsLike, Callable] = None,
+        full_backward_hooks: dict[PathsLike, Callable] = None,
+        full_backward_pre_hooks: dict[PathsLike, Callable] = None,
         **kwargs):
     """Runs the model, accepting some extra keyword parameters for various behaviours
     
@@ -212,6 +216,19 @@ def run(module: nn.Module, *args,
     with_activations - if set, replaces the given activations when running the module forward.
     with_forwared_hooks - if sets, temporarily registers the forward hooks for just this run """
     cleanup: list[RemovableHandle] = []
+
+    if forward_hooks:
+        for k, v in forward_hooks.items():
+            cleanup.extend(register_forward_hook(module, k, v).handles)
+    if forward_pre_hooks:
+        for k, v in forward_pre_hooks.items():
+            cleanup.extend(register_forward_pre_hook(module, k, v).handles)
+    if full_backward_hooks:
+        for k, v in full_backward_hooks.items():
+            cleanup.extend(register_full_backward_hook(module, k, v).handles)
+    if full_backward_pre_hooks:
+        for k, v in full_backward_pre_hooks.items():
+            cleanup.extend(register_full_backward_pre_hook(module, k, v).handles)
 
     if with_activations:
         def with_activation_hook(new_value, m, p, i, o):

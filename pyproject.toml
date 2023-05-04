@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[project]
+name = "nice_hooks"
+version = "0.0.1"
+authors = [
+  { name="Adam Newgas", email="boris@boristhebrave.com" },
+]
+description = "Convenience functions for working with pytorch hooks."
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/BorisTheBrave/nice_hooks"
+"Bug Tracker" = "https://github.com/BorisTheBrave/nice_hooks/issues"
