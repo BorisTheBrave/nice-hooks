@@ -3,8 +3,6 @@ import unittest
 import torch as t
 import torch.nn as nn
 
-
-
 def init(module: nn.Module):
     with t.no_grad():
         for mod in module.modules():
