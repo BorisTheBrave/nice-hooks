@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "nice_hooks"}]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.9"
 torch = ">=1.10"
 
 [tool.poetry.group.dev.dependencies]
